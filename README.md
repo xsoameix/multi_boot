@@ -8,7 +8,7 @@ Layout:
 
     Type: FAT32
 
-    Size: 2G (Linux Mint iso: 1.5G)
+    Size: 5G (Linux Mint iso: 1.5G + Win7Ent_64_CHT_wSP1.ISO: 3.1G)
 
     Directories:
 
@@ -22,29 +22,9 @@ Layout:
               grubenv
         ▾ iso/
             linuxmint-17.2-cinnamon-64bit.iso
+            Win7Ent_64_CHT_wSP1.ISO
 
 2.  Partition 2:
-
-    Windows 7 files
-
-    Type: NTFS
-
-    Size: 4G (Win7Ent_64_CHT_wSP1.ISO: 3.1G)
-
-    Directories:
-
-        ▸ boot/
-        ▸ efi/
-        ▸ sources/
-        ▸ support/
-        ▸ upgrade/
-          autorun.inf
-          bootmgr
-          bootmgr.efi
-          grub.exe
-          setup.exe
-
-3.  Partition 3:
 
     Persistent partition for Linux Mint
 
@@ -80,32 +60,19 @@ Create partition 2
 
     > n
     > p
-    > 2
-    > +4G
-
-Change type
-
-    > t
-    > 7  # HPFS/NTFS/exFAT
-
-Create partition 3
-
-    > n
-    > p
     > 3
     > +1G
 
 Change label
 
-    # e2label /dev/sdf3 casper-rw
+    # e2label /dev/sdf2 casper-rw
 
 Replug your USB
 
 Format
 
     # mkfs.vfat -F 32 /dev/sdf1
-    # mkfs.ntfs -f /dev/sdf2
-    # mkfs.ext4 /dev/sdf3
+    # mkfs.ext4 /dev/sdf2
 
 ## Install Grub
 
@@ -129,7 +96,7 @@ Now partition 1 has new created directory
           grub.cfg
           grubenv
 
-## Add Linux Mint iso to partition 1
+## Linux Mint
 
 Create a directory `iso` in partition 1 and copy linux mint iso into it
 
@@ -149,37 +116,63 @@ Now partition 1 has these directories
     ▾ iso/
         linuxmint-17.2-cinnamon-64bit.iso
 
-## Add Windows 7 to partition 2
-
-Mount partition 2
-
-    # mkdir /mnt/win
-    # mount /dev/sdf2 /mnt/win
+## Windows 7
 
 Download grub4dos and extract `grub.exe`
 
     # wget http://download.gna.org/grub4dos/grub4dos-0.4.4.zip
     # unzip grub4dos-0.4.4.zip
-    # cp grub4dos-0.4.4/grub.exe /mnt/win
+    # cp grub4dos-0.4.4/grub.exe /mnt/grub
 
-Mount Windows 7 iso and copy files
+Copy Windows 7 iso into it
 
-    # mount -r ~/Win7Ent_64_CHT_wSP1.ISO /mnt/iso
-    # cp -r /mnt/iso/* /mnt/win
-    # umount /mnt/iso
+    # cp ~/Win7Ent_64_CHT_wSP1.ISO /mnt/grub/iso
+
+Download `Contig.exe`
+
+    # wget https://download.sysinternals.com/files/Contig.zip
+    # unzip Contig.zip
+    # cp Contig.exe /mnt/grub/iso
+
+Use `Contig.exe` to defrag the iso
+
+    # E is the label of partition 1
+    E:\iso> Contig.exe -a -v -s Win7Ent_64_CHT_wSP1.ISO*
 
 Now partition 2 has these directories
 
-    ▸ boot/
-    ▸ efi/
-    ▸ sources/
-    ▸ support/
-    ▸ upgrade/
-      autorun.inf
-      bootmgr
-      bootmgr.efi
+    ▾ boot/
+      ▾ grub/
+        ▸ fonts/
+        ▸ i386-pc/
+        ▸ locale/
+        ▸ themes/
+          grub.cfg
+          grubenv
+    ▾ iso/
+        linuxmint-17.2-cinnamon-64bit.iso
+        Win7Ent_64_CHT_wSP1.ISO
+        Contig.exe
       grub.exe
-      setup.exe
+
+## Setup imdisk
+
+    # wget http://www.ltr-data.se/files/imdiskinst.exe
+    # sudo apt-get install p7zip-rar
+    # 7z e -y imdiskinst.exe
+    # mkdir /mnt/grub/imdisk
+    # cp * /mnt/grub/imdisk
+
+Create installing imdisk script
+
+    # vim /mnt/grub/imdisk/SetupImDisk.CMD
+    rundll32.exe setupapi.dll,InstallHinfSection DefaultInstall 132 .\imdisk.inf
+
+Create loading `Win7Ent_64_CHT_wSP1.ISO` script
+
+    # vim /mnt/grub/imdisk/SetupCDROM.CMD
+    Set fullname=%~1
+    imdisk -a -f "%fullname%" -m #:
 
 ## Configure Grub
 
@@ -196,25 +189,59 @@ The `casper-rw` label of partition 3 and `persistent` parameter in `grub.cfg` ma
     }
 
     menuentry "Windows 7 64-bit CHT" {
-        insmod ntfs
-        set root=(hd0,msdos2)
+        set root=(hd0,msdos1)
         linux /grub.exe
     }
 
-# Open Linux Mint
+# Install Linux Mint
 
 Select first option of grub menu and press ENTER.
 
-# Open Windows 7
+# Install Windows 7
 
 Select second option of grub menu and press ENTER.
 
-    grub> find --set-root /bootmgr
-    grub> chainloader /bootmgr
+    grub> map (hd0) (hd1)
+    grub> map (hd1) (hd0)
+    grub> find --set-root /iso/Win7Ent_64_CHT_wSP1.ISO
+    grub> map /iso/Win7Ent_64_CHT_wSP1.ISO (hd32)
+    grub> map --hook
+    grub> chainloader (hd32)
     grub> boot
 
 The Windows 7 installation guide interface is shown.
 
 Press `Shift + F10` to open the terminal
 
-    X:/sources > setup.exe
+    X:\sources> pushd E:\imdisk
+    E:\imdisk> SetupImDisk.CMD
+    E:\imdisk> SetupCDROM.CMD E:\iso\Win7Ent_64_CHT_wSP1.ISO
+
+Make NTFS partition to store Virtual Hard Disk files
+
+    E:\imdisk> diskpart
+    DISKPART> list disk
+    DISKPART> select disk 0
+    DISKPART> list partition
+    DISKPART> select partition 1  # partition 1 is NTFS partition
+    DISKPART> format fs=ntfs label="vhds" quick
+    DISKPART> assign letter=c
+    DISKPART> active
+
+Create Virtual Hard Disk (win7.vhd: 20G)
+
+    DISKPART> create vdisk file=c:\win7.vhd maximum=20000 type=expandable
+    DISKPART> attach vdisk file=c:\win7.vhd
+    DISKPART> exit
+    E:\imdisk> exit
+
+Proceed with installation and choose the partition just created (20G).
+When the computer reboot, plug out the USB and continue the installation.
+
+# Reference
+
+[利用 GRUB2 掛載 ISO 檔安裝 OS](http://jw1903.blogspot.tw/2013/08/grub2-iso-os.html)
+
+[Grub4Dos 系統安裝碟](http://fireball-catcher.blogspot.tw/2012/07/grub4dos.html)
+
+[Installing a Fresh Windows OS to a New Bootable VHD with no Host OS for Boot to VHD](http://www.johnpapa.net/bootoffmetal/)
